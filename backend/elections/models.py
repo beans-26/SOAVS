@@ -42,3 +42,16 @@ class Candidate(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.position.name})"
+
+class VoteRecord(models.Model):
+    election = models.ForeignKey(Election, on_delete=models.CASCADE, related_name='votes')
+    position = models.ForeignKey(Position, on_delete=models.CASCADE, related_name='votes')
+    candidate = models.ForeignKey(Candidate, on_delete=models.CASCADE, related_name='votes')
+    user = models.ForeignKey('accounts.User', on_delete=models.CASCADE, related_name='votes')
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ['user', 'election']
+
+    def __str__(self):
+        return f"Vote for {self.candidate.name} under {self.position.name}"

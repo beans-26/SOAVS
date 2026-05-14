@@ -190,6 +190,3 @@ const AdminElections = () => {
 };
 
 export default AdminElections;
-
-
-export default AdminElections;

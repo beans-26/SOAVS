@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Election, Position, Candidate
+from .models import Election, Position, Candidate, VoteRecord
 
 class CandidateSerializer(serializers.ModelSerializer):
     position_name = serializers.CharField(source='position.name', read_only=True)
@@ -22,3 +22,12 @@ class ElectionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Election
         fields = ['id', 'title', 'start_date', 'end_date', 'status', 'calculated_status', 'positions']
+
+class VoteRecordSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = VoteRecord
+        fields = '__all__'
+
+class SubmitVoteSerializer(serializers.Serializer):
+    election_id = serializers.IntegerField()
+    selections = serializers.ListField(child=serializers.IntegerField())
