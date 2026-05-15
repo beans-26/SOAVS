@@ -39,6 +39,10 @@ export default function DashboardScreen() {
 
   useEffect(() => {
     fetchData();
+
+    // Auto-refresh every 15 seconds
+    const interval = setInterval(fetchData, 15000);
+    return () => clearInterval(interval);
   }, []);
 
   const onRefresh = useCallback(() => {
@@ -51,41 +55,59 @@ export default function DashboardScreen() {
     router.replace('/login');
   };
 
-  const renderElectionItem = ({ item }: { item: any }) => (
-    <TouchableOpacity 
-      activeOpacity={hasVoted ? 1 : 0.8}
-      onPress={hasVoted ? undefined : () => router.push({ pathname: '/ballot', params: { id: item.id, title: item.title } })}
-      disabled={hasVoted}
-    >
-      <GlassPanel style={[styles.electionCard, hasVoted && styles.electionCardVoted]}>
-        <View style={styles.cardHeader}>
-          <View style={[styles.iconBox, hasVoted && styles.iconBoxVoted]}>
-            {hasVoted ? (
-              <CircleCheck size={24} color={Colors.success} />
-            ) : (
-              <Vote size={24} color={Colors.primary} />
-            )}
-          </View>
-          <View style={styles.cardTitleArea}>
-            <Text style={[styles.electionTitle, hasVoted && styles.electionTitleVoted]}>{item.title}</Text>
-            <View style={styles.dateRow}>
+  const renderElectionItem = ({ item }: { item: any }) => {
+    const isUpcoming = item.calculated_status === 'UPCOMING';
+    const isCompleted = item.calculated_status === 'COMPLETED';
+    const isActive = item.calculated_status === 'ACTIVE';
+    const isDisabled = !isActive || hasVoted;
+
+    return (
+      <TouchableOpacity 
+        activeOpacity={isDisabled ? 1 : 0.8}
+        onPress={isDisabled ? undefined : () => router.push({ pathname: '/ballot', params: { id: item.id, title: item.title } })}
+        disabled={isDisabled}
+      >
+        <GlassPanel style={[styles.electionCard, (hasVoted || isCompleted) && styles.electionCardVoted]}>
+          <View style={styles.cardHeader}>
+            <View style={[
+              styles.iconBox, 
+              hasVoted ? styles.iconBoxVoted : isUpcoming ? styles.iconBoxUpcoming : isCompleted ? styles.iconBoxCompleted : null
+            ]}>
               {hasVoted ? (
-                <Text style={styles.votedBadgeText}>✓ You have already voted</Text>
+                <CircleCheck size={24} color={Colors.success} />
+              ) : isUpcoming ? (
+                <Calendar size={24} color="#3b82f6" />
+              ) : isCompleted ? (
+                <Info size={24} color={Colors.textMuted} />
               ) : (
-                <>
-                  <Calendar size={14} color={Colors.textMuted} />
-                  <Text style={styles.dateText}>
-                    Ends: {new Date(item.end_date).toLocaleDateString()}
-                  </Text>
-                </>
+                <Vote size={24} color={Colors.primary} />
               )}
             </View>
+            <View style={styles.cardTitleArea}>
+              <Text style={[styles.electionTitle, (hasVoted || isCompleted) && styles.electionTitleVoted]}>{item.title}</Text>
+              <View style={styles.dateRow}>
+                {hasVoted ? (
+                  <Text style={styles.votedBadgeText}>✓ You have already voted</Text>
+                ) : isUpcoming ? (
+                  <Text style={styles.upcomingBadgeText}>Starts: {new Date(item.start_date).toLocaleString()}</Text>
+                ) : isCompleted ? (
+                  <Text style={styles.completedBadgeText}>Status: Completed</Text>
+                ) : (
+                  <>
+                    <Calendar size={14} color={Colors.textMuted} />
+                    <Text style={styles.dateText}>
+                      Ends: {new Date(item.end_date).toLocaleDateString()}
+                    </Text>
+                  </>
+                )}
+              </View>
+            </View>
+            {!isDisabled && <ChevronRight size={20} color={Colors.textMuted} />}
           </View>
-          {!hasVoted && <ChevronRight size={20} color={Colors.textMuted} />}
-        </View>
-      </GlassPanel>
-    </TouchableOpacity>
-  );
+        </GlassPanel>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -112,7 +134,7 @@ export default function DashboardScreen() {
         </View>
       </View>
 
-      <Text style={styles.sectionTitle}>Active Elections</Text>
+      <Text style={styles.sectionTitle}>Elections</Text>
 
       {loading && !refreshing ? (
         <View style={styles.centered}>
@@ -266,5 +288,21 @@ const styles = StyleSheet.create({
     color: Colors.success,
     fontSize: 12,
     fontWeight: '600',
+  },
+  upcomingBadgeText: {
+    color: '#3b82f6',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  completedBadgeText: {
+    color: Colors.textMuted,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  iconBoxUpcoming: {
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+  },
+  iconBoxCompleted: {
+    backgroundColor: 'rgba(148, 163, 184, 0.1)',
   }
 });

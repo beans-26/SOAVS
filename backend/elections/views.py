@@ -54,16 +54,19 @@ class ActiveElectionViewSet(viewsets.ReadOnlyModelViewSet):
     authentication_classes = []
 
     def get_queryset(self):
-        now = timezone.now()
-        return Election.objects.filter(
-            ~Q(status__in=['DRAFT', 'COMPLETED']),
-            start_date__lte=now,
-            end_date__gte=now
-        )
+        return Election.objects.filter(~Q(status='DRAFT')).order_by('-start_date')
 
     @action(detail=True, methods=['GET'])
     def ballot(self, request, pk=None):
         election = self.get_object()
+        
+        # Check if voting is actually allowed
+        now = timezone.now()
+        if election.calculated_status == 'UPCOMING':
+            return Response({'error': 'Voting has not started yet.'}, status=status.HTTP_400_BAD_REQUEST)
+        if election.calculated_status == 'COMPLETED':
+            return Response({'error': 'Voting has ended for this election.'}, status=status.HTTP_400_BAD_REQUEST)
+
         positions = Position.objects.filter(election=election)
 
         data = []

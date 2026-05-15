@@ -6,6 +6,10 @@ from django.core.mail import send_mail
 from .serializers import LoginSerializer, UserSerializer, RegisterSerializer
 from .models import User
 
+from django.db.models import Q
+from django.utils import timezone
+from elections.models import Election
+
 class LoginView(views.APIView):
     permission_classes = []
 
@@ -13,6 +17,20 @@ class LoginView(views.APIView):
         serializer = LoginSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.validated_data
+            
+            # If the user is a voter (not an admin), check for active/upcoming elections
+            if not user.is_admin:
+                now = timezone.now()
+                has_relevant_election = Election.objects.filter(
+                    ~Q(status='DRAFT'),
+                    end_date__gte=now
+                ).exists()
+                
+                if not has_relevant_election:
+                    return Response({
+                        'error': 'There are no active or upcoming elections at this time.'
+                    }, status=status.HTTP_403_FORBIDDEN)
+
             refresh = RefreshToken.for_user(user)
             return Response({
                 'user': UserSerializer(user).data,
