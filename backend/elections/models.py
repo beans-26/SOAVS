@@ -26,22 +26,44 @@ class Election(models.Model):
     def __str__(self):
         return self.title
 
+
+class Partylist(models.Model):
+    election = models.ForeignKey(Election, on_delete=models.CASCADE, related_name='partylists')
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, default='')
+
+    class Meta:
+        unique_together = ['election', 'name']
+
+    def __str__(self):
+        return f"{self.name} ({self.election.title})"
+
+
 class Position(models.Model):
     election = models.ForeignKey(Election, on_delete=models.CASCADE, related_name='positions')
     name = models.CharField(max_length=150)
     max_votes_allowed = models.IntegerField(default=1)
+    hierarchy_order = models.IntegerField(default=0)
+
+    class Meta:
+        ordering = ['hierarchy_order', 'id']
 
     def __str__(self):
         return f"{self.name} - {self.election.title}"
+
 
 class Candidate(models.Model):
     position = models.ForeignKey(Position, on_delete=models.CASCADE, related_name='candidates')
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
     photo = models.ImageField(upload_to='candidate_photos/', blank=True, null=True)
+    partylist = models.ForeignKey(Partylist, on_delete=models.SET_NULL, null=True, blank=True, related_name='candidates')
+    platform_statement = models.TextField(blank=True, default='')
+    course_and_year = models.CharField(max_length=100, blank=True, default='')
 
     def __str__(self):
         return f"{self.name} ({self.position.name})"
+
 
 class VoteRecord(models.Model):
     election = models.ForeignKey(Election, on_delete=models.CASCADE, related_name='votes')

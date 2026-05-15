@@ -4,11 +4,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.utils import timezone
 from django.db import transaction
-from django.db.models import Q
-from .models import Election, Position, Candidate, VoteRecord
+from django.db.models import Q, Count
+from .models import Election, Position, Candidate, VoteRecord, Partylist
 from .serializers import (
     ElectionSerializer, PositionSerializer, CandidateSerializer,
-    VoteRecordSerializer, SubmitVoteSerializer
+    VoteRecordSerializer, SubmitVoteSerializer, PartylistSerializer
 )
 
 
@@ -16,6 +16,63 @@ class ElectionViewSet(viewsets.ModelViewSet):
     queryset = Election.objects.all().order_by('-start_date')
     serializer_class = ElectionSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+
+    @action(detail=True, methods=['GET'])
+    def results(self, request, pk=None):
+        """Return vote tallies for all candidates in this election."""
+        election = self.get_object()
+        positions = Position.objects.filter(election=election).order_by('hierarchy_order', 'id')
+
+        results_data = []
+        for position in positions:
+            candidates = Candidate.objects.filter(position=position)
+            candidate_results = []
+            for candidate in candidates:
+                vote_count = VoteRecord.objects.filter(
+                    election=election,
+                    candidate=candidate
+                ).count()
+                candidate_results.append({
+                    'id': candidate.id,
+                    'name': candidate.name,
+                    'partylist': candidate.partylist.name if candidate.partylist else None,
+                    'photo': candidate.photo.url if candidate.photo else None,
+                    'course_and_year': candidate.course_and_year,
+                    'votes': vote_count,
+                })
+            # Sort by vote count descending
+            candidate_results.sort(key=lambda x: x['votes'], reverse=True)
+            results_data.append({
+                'position_id': position.id,
+                'position_name': position.name,
+                'max_votes_allowed': position.max_votes_allowed,
+                'candidates': candidate_results,
+            })
+
+        total_voters = VoteRecord.objects.filter(election=election).values('user').distinct().count()
+
+        return Response({
+            'election': {
+                'id': election.id,
+                'title': election.title,
+                'status': election.calculated_status,
+            },
+            'total_voters': total_voters,
+            'results': results_data,
+        })
+
+
+class PartylistViewSet(viewsets.ModelViewSet):
+    queryset = Partylist.objects.all()
+    serializer_class = PartylistSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+
+    def get_queryset(self):
+        queryset = Partylist.objects.all()
+        election_id = self.request.query_params.get('election')
+        if election_id is not None:
+            queryset = queryset.filter(election_id=election_id)
+        return queryset
 
 
 class PositionViewSet(viewsets.ModelViewSet):
@@ -59,7 +116,7 @@ class ActiveElectionViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=['GET'])
     def ballot(self, request, pk=None):
         election = self.get_object()
-        
+
         # Check if voting is actually allowed
         now = timezone.now()
         if election.calculated_status == 'UPCOMING':
@@ -90,7 +147,7 @@ class BallotSubmissionView(APIView):
         auth_header = request.headers.get('Authorization', '')
         if not auth_header.startswith('Bearer '):
             return Response({'error': 'Authentication required. Please log in again.'}, status=status.HTTP_401_UNAUTHORIZED)
-        
+
         jwt_token = auth_header.split(' ')[1]
         try:
             payload = jwt.decode(jwt_token, settings.SECRET_KEY, algorithms=['HS256'])
@@ -109,7 +166,7 @@ class BallotSubmissionView(APIView):
         try:
             from accounts.models import User
             now = timezone.now()
-            
+
             try:
                 election = Election.objects.get(id=election_id)
             except Election.DoesNotExist:
@@ -124,10 +181,10 @@ class BallotSubmissionView(APIView):
 
             with transaction.atomic():
                 user = User.objects.get(id=user_id)
-                
+
                 if VoteRecord.objects.filter(user=user, election=election).exists():
                     return Response({'error': 'Vote already cast'}, status=status.HTTP_403_FORBIDDEN)
-                
+
                 records = []
                 for candidate_id in selections:
                     candidate = Candidate.objects.get(id=candidate_id)
@@ -139,6 +196,10 @@ class BallotSubmissionView(APIView):
                     ))
                 VoteRecord.objects.bulk_create(records)
 
+                # Clear active session after vote
+                user.is_active_session = False
+                user.save(update_fields=['is_active_session'])
+
             return Response({'success': 'Vote cast successfully'}, status=status.HTTP_201_CREATED)
         except User.DoesNotExist:
             return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
@@ -146,3 +207,47 @@ class BallotSubmissionView(APIView):
             return Response({'error': 'Candidate not found'}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class DashboardStatsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from accounts.models import User
+
+        now = timezone.now()
+
+        active_elections = Election.objects.filter(
+            ~Q(status='DRAFT'),
+            start_date__lte=now,
+            end_date__gte=now
+        ).count()
+
+        total_candidates = Candidate.objects.count()
+        total_voters = User.objects.filter(is_voter=True).count()
+        total_votes = VoteRecord.objects.values('user', 'election').distinct().count()
+
+        # Turnout progression - votes over time (last 30 days, grouped by day)
+        from datetime import timedelta
+        thirty_days_ago = now - timedelta(days=30)
+        daily_votes = (
+            VoteRecord.objects
+            .filter(timestamp__gte=thirty_days_ago)
+            .extra(select={'day': "date(timestamp)"})
+            .values('day')
+            .annotate(count=Count('id', distinct=True))
+            .order_by('day')
+        )
+
+        turnout_data = [
+            {'date': str(entry['day']), 'votes': entry['count']}
+            for entry in daily_votes
+        ]
+
+        return Response({
+            'active_elections': active_elections,
+            'total_candidates': total_candidates,
+            'total_voters': total_voters,
+            'total_votes': total_votes,
+            'turnout_progression': turnout_data,
+        })

@@ -1,19 +1,34 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, ListChecks, Users, LogOut } from 'lucide-react';
+import { LayoutDashboard, ListChecks, Users, LogOut, Flag, UserCheck } from 'lucide-react';
+import axios from 'axios';
 
 const navItems = [
+    { to: '/admin/dashboard', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
     { to: '/admin/elections', icon: <ListChecks size={20} />, label: 'Elections' },
     { to: '/admin/candidates', icon: <Users size={20} />, label: 'Candidates' },
+    { to: '/admin/partylists', icon: <Flag size={20} />, label: 'Partylists' },
+    { to: '/admin/users', icon: <UserCheck size={20} />, label: 'Users' },
 ];
 
 const AdminLayout = ({ children }) => {
     const navigate = useNavigate();
 
-    const handleLogout = () => {
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        navigate('/login');
+    const handleLogout = async () => {
+        try {
+            const token = localStorage.getItem('access_token');
+            if (token) {
+                await axios.post('http://localhost:8000/api/accounts/logout/', {}, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+            }
+        } catch (err) {
+            console.error('Logout failed on backend', err);
+        } finally {
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('refresh_token');
+            navigate('/login');
+        }
     };
 
     return (

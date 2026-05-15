@@ -15,8 +15,13 @@ const AdminCandidates = () => {
     const [positions, setPositions] = useState([]);
     const [selectedPosition, setSelectedPosition] = useState('');
     const [candidateName, setCandidateName] = useState('');
+    const [platformStatement, setPlatformStatement] = useState('');
+    const [courseAndYear, setCourseAndYear] = useState('');
+    const [selectedPartylist, setSelectedPartylist] = useState('');
+    const [partylists, setPartylists] = useState([]);
     const [loading, setLoading] = useState(false);
     const [newPositionName, setNewPositionName] = useState('');
+    const [newPositionOrder, setNewPositionOrder] = useState(0);
     const [isAddingPosition, setIsAddingPosition] = useState(false);
 
     const token = localStorage.getItem('access_token');
@@ -37,23 +42,30 @@ const AdminCandidates = () => {
 
     useEffect(() => {
         if (selectedElection) {
-            const fetchPositions = async () => {
+            const fetchData = async () => {
                 setLoading(true);
                 try {
-                    const response = await axios.get(`http://localhost:8000/api/positions/?election=${selectedElection}`, {
-                        headers: { Authorization: `Bearer ${token}` }
-                    });
-                    setPositions(response.data);
-                    if (response.data.length > 0) setSelectedPosition(response.data[0].id);
+                    const [posRes, plRes] = await Promise.all([
+                        axios.get(`http://localhost:8000/api/positions/?election=${selectedElection}`, {
+                            headers: { Authorization: `Bearer ${token}` }
+                        }),
+                        axios.get(`http://localhost:8000/api/partylists/?election=${selectedElection}`, {
+                            headers: { Authorization: `Bearer ${token}` }
+                        }),
+                    ]);
+                    setPositions(posRes.data);
+                    setPartylists(plRes.data);
+                    if (posRes.data.length > 0) setSelectedPosition(posRes.data[0].id);
                 } catch (err) {
-                    console.error('Failed to fetch positions', err);
+                    console.error('Failed to fetch data', err);
                 } finally {
                     setLoading(false);
                 }
             };
-            fetchPositions();
+            fetchData();
         } else {
             setPositions([]);
+            setPartylists([]);
             setSelectedPosition('');
         }
     }, [selectedElection]);
@@ -65,13 +77,15 @@ const AdminCandidates = () => {
         try {
             const response = await axios.post('http://localhost:8000/api/positions/', {
                 election: selectedElection,
-                name: newPositionName
+                name: newPositionName,
+                hierarchy_order: newPositionOrder,
             }, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setPositions([...positions, response.data]);
             setSelectedPosition(response.data.id);
             setNewPositionName('');
+            setNewPositionOrder(0);
             setIsAddingPosition(false);
         } catch (err) {
             alert('Failed to add position');
@@ -85,13 +99,21 @@ const AdminCandidates = () => {
         if (!selectedPosition) return;
         setLoading(true);
         try {
-            await axios.post('http://localhost:8000/api/candidates/', {
+            const data = {
                 position: selectedPosition,
-                name: candidateName
-            }, {
+                name: candidateName,
+                platform_statement: platformStatement,
+                course_and_year: courseAndYear,
+            };
+            if (selectedPartylist) data.partylist = selectedPartylist;
+
+            await axios.post('http://localhost:8000/api/candidates/', data, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setCandidateName('');
+            setPlatformStatement('');
+            setCourseAndYear('');
+            setSelectedPartylist('');
             // Refresh positions to show new candidate
             const response = await axios.get(`http://localhost:8000/api/positions/?election=${selectedElection}`, {
                 headers: { Authorization: `Bearer ${token}` }
@@ -124,7 +146,7 @@ const AdminCandidates = () => {
         <AdminLayout>
             <div className="fade-in" style={{ padding: '40px', width: '100%', maxWidth: '1200px', margin: '0 auto' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '30px' }}>
-                    <button 
+                    <button
                         onClick={() => navigate('/admin/elections')}
                         style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
                     >
@@ -139,8 +161,8 @@ const AdminCandidates = () => {
                         <div className="glass-card" style={{ padding: '25px' }}>
                             <h3 style={{ marginBottom: '15px' }}>Step 1: Select Election</h3>
                             <div className="input-group">
-                                <select 
-                                    value={selectedElection} 
+                                <select
+                                    value={selectedElection}
                                     onChange={(e) => setSelectedElection(e.target.value)}
                                     style={{ width: '100%', padding: '12px', background: 'var(--bg-dark)', color: 'white', borderRadius: '12px', border: '1px solid var(--glass-border)' }}
                                 >
@@ -154,8 +176,8 @@ const AdminCandidates = () => {
                                     <h3 style={{ marginBottom: '15px', marginTop: '20px' }}>Step 2: Position</h3>
                                     {!isAddingPosition ? (
                                         <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
-                                            <select 
-                                                value={selectedPosition} 
+                                            <select
+                                                value={selectedPosition}
                                                 onChange={(e) => setSelectedPosition(e.target.value)}
                                                 style={{ flex: 1, padding: '12px', background: 'var(--bg-dark)', color: 'white', borderRadius: '12px', border: '1px solid var(--glass-border)' }}
                                             >
@@ -167,11 +189,20 @@ const AdminCandidates = () => {
                                     ) : (
                                         <form onSubmit={handleAddPosition} style={{ marginBottom: '20px' }}>
                                             <div className="input-group">
-                                                <input 
-                                                    placeholder="New Position Name (e.g. President)" 
+                                                <input
+                                                    placeholder="New Position Name (e.g. President)"
                                                     value={newPositionName}
                                                     onChange={(e) => setNewPositionName(e.target.value)}
                                                     required
+                                                />
+                                            </div>
+                                            <div className="input-group">
+                                                <label>Order (lower = higher rank)</label>
+                                                <input
+                                                    type="number"
+                                                    placeholder="0"
+                                                    value={newPositionOrder}
+                                                    onChange={(e) => setNewPositionOrder(parseInt(e.target.value) || 0)}
                                                 />
                                             </div>
                                             <div style={{ display: 'flex', gap: '10px' }}>
@@ -186,11 +217,46 @@ const AdminCandidates = () => {
                                             <h3 style={{ marginBottom: '15px' }}>Step 3: Add Candidate</h3>
                                             <form onSubmit={handleAddCandidate}>
                                                 <div className="input-group">
-                                                    <input 
-                                                        placeholder="Candidate Full Name" 
+                                                    <label>Full Name</label>
+                                                    <input
+                                                        placeholder="Candidate Full Name"
                                                         value={candidateName}
                                                         onChange={(e) => setCandidateName(e.target.value)}
                                                         required
+                                                    />
+                                                </div>
+                                                <div className="input-group">
+                                                    <label>Course & Year</label>
+                                                    <input
+                                                        placeholder="e.g. BSIT - 3rd Year"
+                                                        value={courseAndYear}
+                                                        onChange={(e) => setCourseAndYear(e.target.value)}
+                                                    />
+                                                </div>
+                                                <div className="input-group">
+                                                    <label>Partylist</label>
+                                                    <select
+                                                        value={selectedPartylist}
+                                                        onChange={(e) => setSelectedPartylist(e.target.value)}
+                                                        style={{ width: '100%', padding: '12px', background: 'var(--bg-dark)', color: 'white', borderRadius: '12px', border: '1px solid var(--glass-border)' }}
+                                                    >
+                                                        <option value="">-- Independent --</option>
+                                                        {partylists.map(pl => <option key={pl.id} value={pl.id}>{pl.name}</option>)}
+                                                    </select>
+                                                </div>
+                                                <div className="input-group">
+                                                    <label>Platform Statement</label>
+                                                    <textarea
+                                                        placeholder="Candidate's platform..."
+                                                        value={platformStatement}
+                                                        onChange={(e) => setPlatformStatement(e.target.value)}
+                                                        rows={3}
+                                                        style={{
+                                                            width: '100%', background: 'rgba(15,23,42,0.5)',
+                                                            border: '1px solid var(--glass-border)', borderRadius: '12px',
+                                                            padding: '12px 16px', color: 'white', outline: 'none',
+                                                            resize: 'vertical', fontFamily: 'inherit', fontSize: '1rem',
+                                                        }}
                                                     />
                                                 </div>
                                                 <button type="submit" className="btn-primary" disabled={loading}>
@@ -209,7 +275,7 @@ const AdminCandidates = () => {
                         <h2 style={{ marginBottom: '25px', display: 'flex', alignItems: 'center', gap: '12px' }}>
                             <Award color="var(--primary)" /> Candidates List
                         </h2>
-                        
+
                         {!selectedElection ? (
                             <div style={{ textAlign: 'center', padding: '60px', color: 'var(--text-muted)' }}>
                                 <Briefcase size={48} style={{ marginBottom: '15px' }} />
@@ -231,16 +297,42 @@ const AdminCandidates = () => {
                                             {position.name}
                                             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{position.candidates.length} candidates</span>
                                         </h4>
-                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '15px' }}>
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '15px' }}>
                                             {position.candidates.map(candidate => (
-                                                <div key={candidate.id} className="glass-card" style={{ padding: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.05)' }}>
-                                                    <span>{candidate.name}</span>
-                                                    <button 
-                                                        style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}
-                                                        onClick={() => deleteCandidate(candidate.id)}
-                                                    >
-                                                        <Trash2 size={16} />
-                                                    </button>
+                                                <div key={candidate.id} className="glass-card" style={{
+                                                    padding: '18px', background: 'rgba(255,255,255,0.05)',
+                                                    display: 'flex', flexDirection: 'column', gap: '8px',
+                                                }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                        <span style={{ fontWeight: '600', fontSize: '1rem' }}>{candidate.name}</span>
+                                                        <button
+                                                            style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}
+                                                            onClick={() => deleteCandidate(candidate.id)}
+                                                        >
+                                                            <Trash2 size={16} />
+                                                        </button>
+                                                    </div>
+                                                    {candidate.course_and_year && (
+                                                        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                                            {candidate.course_and_year}
+                                                        </span>
+                                                    )}
+                                                    {candidate.partylist_name && (
+                                                        <span style={{
+                                                            fontSize: '0.75rem', color: '#a5b4fc',
+                                                            background: 'rgba(99,102,241,0.1)', padding: '3px 10px',
+                                                            borderRadius: '20px', width: 'fit-content',
+                                                        }}>
+                                                            {candidate.partylist_name}
+                                                        </span>
+                                                    )}
+                                                    {candidate.platform_statement && (
+                                                        <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px', lineHeight: '1.4' }}>
+                                                            {candidate.platform_statement.length > 80
+                                                                ? candidate.platform_statement.substring(0, 80) + '...'
+                                                                : candidate.platform_statement}
+                                                        </p>
+                                                    )}
                                                 </div>
                                             ))}
                                             {position.candidates.length === 0 && <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>No candidates yet.</p>}

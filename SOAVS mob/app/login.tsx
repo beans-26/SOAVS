@@ -33,7 +33,23 @@ export default function LoginScreen() {
       await AsyncStorage.setItem('voter_data', JSON.stringify(response.data));
       router.replace('/dashboard');
     } catch (error: any) {
-      const msg = error.response?.data?.error || 'Failed to authenticate. Please check your credentials.';
+      console.error('Login error:', error);
+      let msg = 'Failed to authenticate. Please check your credentials.';
+      
+      if (error.response?.data) {
+        const data = error.response.data;
+        if (data.error) msg = data.error;
+        else if (data.non_field_errors) msg = data.non_field_errors[0];
+        else if (data.detail) msg = data.detail;
+        else if (typeof data === 'object') {
+          // Flatten first field error if available
+          const firstKey = Object.keys(data)[0];
+          if (Array.isArray(data[firstKey])) msg = `${firstKey}: ${data[firstKey][0]}`;
+        }
+      } else if (error.message) {
+        msg = error.message;
+      }
+      
       setErrorModal({ visible: true, title: 'Authentication Error', message: msg });
     } finally {
       setLoading(false);
